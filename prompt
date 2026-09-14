@@ -1,0 +1,82 @@
+# Antigravity Prompt — Secure, Minimal, Open-Source Chat + Call App
+
+> Paste everything below the line into Antigravity as the initial task prompt. Adjust the **Project name** and **Domain** placeholders first.
+
+---
+
+## Role
+
+You are a senior full-stack + security engineer. Build a production-grade, self-hostable, end-to-end encrypted **1:1 and small-group chat and voice/video calling application**. Work autonomously: plan, scaffold, implement, test, and document. Ask me only when a decision is irreversible or blocks progress; otherwise choose the most secure, most modern, lowest-latency open-source option and record the decision in `docs/DECISIONS.md`.
+
+**Project name:** `{{PROJECT_NAME}}`
+**Public domain (for TLS / TURN / federation):** `{{DOMAIN}}`
+
+## Non-negotiable constraints
+
+1. **100% open source, zero licence cost.** Every dependency, server, SDK, font, and icon set must be OSI-approved (MIT, Apache-2.0, BSD, MPL-2.0, AGPL-3.0, GPL-3.0). No freemium SDKs, no SaaS APIs, no telemetry, no analytics, no third-party CDNs, no Google/Apple push services in the core build. If something is unavoidable, stop and ask.
+2. **Maximum security.** End-to-end encryption on by default for every message and every call; the server must never be able to read content. Modern, audited cryptography only.
+3. **Very low latency.** Calls via WebRTC through an SFU with sub-150 ms target end-to-end on a LAN/regional deployment; messages delivered in under 300 ms on a warm connection. Measure it, don't assume it.
+4. **Minimalistic UI.** Two screens that matter: conversation list and conversation view (with call controls). Monochrome palette with one accent colour, system font stack, no decorative animation, full dark/light support, WCAG AA contrast, keyboard navigable.
+5. **No special permissions, no firewall breaches.** Everything runs over standard HTTPS (443) and WebRTC (UDP media with TCP/TLS fallback via TURN on 443). No root on the client, no VPN, no custom ports required on the client side. Only OS-level permissions requested are microphone and camera, and only when the user starts a call.
+6. **Scope is chat + calls only.** No bots, no marketplace, no threads, no reactions, no stickers, no read-receipt tracking beyond what the protocol does by default. Say no to feature creep.
+
+## Recommended stack (use unless you find a strictly better open-source option and justify it in DECISIONS.md)
+
+**Protocol & server**
+- **Matrix** as the messaging protocol (open standard, E2EE by default, federation-capable but federation **disabled** by default in our config).
+- **Synapse** (Apache-2.0, Python) as the homeserver for stability and complete feature coverage, running behind **Caddy** (Apache-2.0) for automatic TLS. If a Rust homeserver such as **Continuwuity/Tuwunel** proves stable and supports MatrixRTC at the time of building, you may prefer it for lower resource use — benchmark both and document the result.
+- **PostgreSQL 16+** as the datastore, with encryption at rest via LUKS or cloud disk encryption documented in the deployment guide.
+- **coturn** (BSD) as the TURN/STUN server, listening on UDP 3478 and **TCP/TLS 443** so calls succeed behind corporate firewalls without any client-side changes. Use time-limited HMAC credentials, never static secrets.
+- **LiveKit SFU** (Apache-2.0) as the media server, wired to Matrix via **MatrixRTC** so calls are signalled through encrypted Matrix rooms and media keys are exchanged end-to-end (the SFU forwards encrypted frames it cannot decrypt).
+
+**Client**
+- **TypeScript + Vite + React 19** (or SvelteKit 2 if you can demonstrate lower bundle size and equal maturity — document the choice). Ship as an installable **PWA** so it runs on desktop and mobile browsers with no app-store dependency; structure the code so a Tauri (Apache/MIT) desktop wrapper and a Capacitor (MIT) mobile wrapper can be added later without refactoring.
+- **matrix-js-sdk** with the **Rust crypto engine (`@matrix-org/matrix-sdk-crypto-wasm`)** — never the legacy libolm JS path. Enable Olm/Megolm E2EE for all rooms, device cross-signing, emoji/QR device verification, and encrypted **Secure Server-Side Key Backup** with a user-held recovery key.
+- Calls via **`matrix-js-sdk` MatrixRTC session APIs + `livekit-client`** with **insertable streams / encoded transforms** for true end-to-end media encryption. Use **Opus** for audio (DTX and FEC on) and **AV1 with VP9 fallback** for video with simulcast, so latency stays low on poor networks.
+- Styling with plain **CSS modules or Tailwind CSS 4** (MIT). Icons from **Lucide** (ISC). No component libraries that pull in heavy runtime CSS.
+- State kept minimal (React context or Zustand, MIT); IndexedDB for the encrypted local store via the SDK's own store, nothing custom.
+
+## Security requirements (implement and prove each one)
+
+- E2EE cannot be turned off from the UI. Room creation always sets `m.room.encryption` with `m.megolm.v1.aes-sha2`.
+- Unverified devices are visually flagged; sending to unverified devices in a room requires an explicit one-time acknowledgement.
+- Login supports username/password with **Argon2id** hashing server-side and mandatory **TOTP-based 2FA** hook (via Matrix's UIA flow or MAS — Matrix Authentication Service, Apache-2.0). Registration is invite-only by default (`enable_registration: false`, registration tokens).
+- Rate limiting, brute-force lockout, and IP-agnostic login alerts configured in Synapse.
+- Strict **Content-Security-Policy** (no `unsafe-inline`, no external origins), `Strict-Transport-Security` with preload, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy` limiting camera/microphone to self.
+- **Subresource integrity** for every script tag; all assets self-hosted. The build must produce a fully reproducible bundle (`npm ci` with lockfile, pinned versions, `SOURCE_DATE_EPOCH`).
+- Media (images/files) uploaded only as **encrypted attachments** (`m.file` with `EncryptedFile` JSON); media retention on the server capped at 30 days by default; URL previews disabled.
+- Server logs must contain no message content, no IP addresses beyond what rate limiting needs, and be rotated at 7 days.
+- TLS 1.3 only (TLS 1.2 allowed only for TURN fallback if strictly needed, with modern ciphers). Provide a script that checks the deployed config against Mozilla's "modern" profile.
+- Dependency supply-chain: `npm audit` and `pip-audit` gates in CI; Renovate or Dependabot config included; SBOM generated with **Syft** (Apache-2.0) at build time.
+- Run **OWASP ZAP baseline scan** (Apache-2.0) and **Trivy** (Apache-2.0) container scans in CI; the pipeline fails on High/Critical.
+- Provide a `docs/THREAT-MODEL.md` (assets, adversaries, trust boundaries, what the server operator can and cannot see) and a `docs/SECURITY.md` with a responsible-disclosure process.
+
+## Latency & performance requirements
+
+- Signalling and sync over **Sliding Sync / Simplified Sliding Sync (MSC4186)** if the homeserver supports it; otherwise long-polling `/sync` with a 30 s timeout and lazy-loaded members.
+- WebRTC ICE: prefer UDP host/srflx candidates, TURN-UDP second, TURN-TLS-443 last; log the selected candidate pair in a debug panel.
+- Adaptive bitrate via LiveKit's dynacast + simulcast; audio priority over video under congestion.
+- Target metrics (write an automated check in `scripts/perf/`): first paint < 1.0 s on a mid-range phone, JS bundle < 400 kB gzipped excluding the crypto WASM, message send→receive round-trip < 300 ms on warm connection, call join-to-first-audio < 2 s, audio mouth-to-ear latency < 150 ms on regional deployment.
+
+## UI specification (keep it this small)
+
+- **Screen 1 — Conversations:** list of rooms sorted by activity, unread dot, search box, "New conversation" button. Nothing else.
+- **Screen 2 — Conversation:** message list (grouped by sender, timestamps on hover/tap), composer with attach button, header with the other party's name, encryption shield icon (green = all devices verified, amber = unverified present), and two buttons: **Voice call** and **Video call**.
+- **Call view:** full-screen, video tiles or avatar circle for audio-only, bottom bar with mute, camera toggle, hang up. Show a discreet "End-to-end encrypted" badge and the current latency in ms.
+- **Settings sheet:** display name, device list + verification, key backup status/recovery key, theme toggle, log out. That is the whole app.
+- Design tokens: one neutral scale (9 steps), one accent, 4/8 px spacing grid, `system-ui` font stack, radius 8 px, no shadows heavier than 1 px. Every interactive element ≥ 44 px touch target.
+
+## Deliverables
+
+1. Monorepo layout: `apps/web` (client), `infra/` (Docker Compose with Caddy, Synapse or chosen homeserver, PostgreSQL, coturn, LiveKit, MatrixRTC auth service), `scripts/` (setup, perf, TLS check), `docs/`.
+2. One command `make up` (or `docker compose up -d`) that brings up the entire stack locally with self-signed certs, and `make deploy` guidance for a single VPS with real TLS via Caddy + Let's Encrypt.
+3. Tests: unit tests for all crypto-adjacent UI logic, Playwright end-to-end test that registers two users, verifies devices, exchanges an encrypted message, and completes an encrypted call — asserting on the server that stored events are ciphertext.
+4. GitHub Actions (or Woodpecker CI, Apache-2.0, if you want fully open CI) pipeline: lint, type-check, test, audit, SBOM, container scan, reproducible build.
+5. Documentation: `README.md` (5-minute quick start), `docs/ARCHITECTURE.md` with a diagram, `docs/THREAT-MODEL.md`, `docs/SECURITY.md`, `docs/DECISIONS.md`, `docs/LICENSES.md` listing every dependency and its licence (generate it with `license-checker` and fail the build on any non-OSI licence).
+
+## Working method
+
+- Start by writing `docs/PLAN.md` with milestones: (1) infra up with E2EE chat between two Element clients as a smoke test, (2) minimal custom client with encrypted chat, (3) encrypted voice call, (4) video + simulcast, (5) hardening + CI + docs. Get milestone 1 working before writing UI code.
+- After each milestone, run the tests and the perf script, commit with a conventional-commit message, and give me a two-paragraph status update: what works, what's measured, what's next.
+- If a library you want is not open source or phones home, do not use it — find the open alternative or write the small piece yourself.
+- Prefer boring, audited, widely deployed components over novel ones; "most modern" means current stable releases and current best-practice cryptography, not experimental protocols.

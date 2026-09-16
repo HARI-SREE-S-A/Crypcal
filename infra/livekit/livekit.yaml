@@ -1,0 +1,36 @@
+# =============================================================================
+# CrypCal LiveKit SFU Configuration
+# =============================================================================
+
+port: 7880
+rtc:
+  # WebRTC port range
+  port_range_start: 50000
+  port_range_end: 50200
+  # Use TCP fallback
+  tcp_port: 7881
+  # STUN servers for ICE — use self-hosted coturn (privacy: avoids leaking IPs to Google)
+  stun_servers:
+    - coturn:3478
+
+# Enable Prometheus metrics (optional, for monitoring)
+# prometheus_port: 6789
+
+# Logging
+logging:
+  level: info
+  # JSON format for structured logging
+  json: true
+
+# Room settings
+room:
+  # Maximum participants per room
+  max_participants: 20
+  # Empty room timeout (seconds)
+  empty_timeout: 300
+  # Departure timeout (seconds)
+  departure_timeout: 20
+
+# API keys (injected via environment variables)
+keys:
+  __LIVEKIT_API_KEY__: __LIVEKIT_API_SECRET__

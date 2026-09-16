@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # ==========================================================================
+  # Lint, Type-check, Unit Tests
+  # ==========================================================================
+  lint-and-test:
+    name: Lint, Type-check & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+
+  # ==========================================================================
+  # Security Audit
+  # ==========================================================================
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: npm audit
+        working-directory: apps/web
+        run: npm audit --audit-level=high
+
+      - name: License check
+        working-directory: apps/web
+        run: |
+          npm ci
+          npx license-checker --failOn "GPL-2.0;SSPL;BSL-1.1;BUSL-1.1"
+
+  # ==========================================================================
+  # Build & Bundle Size
+  # ==========================================================================
+  build:
+    name: Build & Bundle Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci
+
+      - name: Reproducible build
+        env:
+          SOURCE_DATE_EPOCH: '0'
+        run: npm run build
+
+      - name: Check bundle size
+        run: |
+          # Check that main JS bundle (excluding crypto WASM) is under 400KB gzipped
+          TOTAL=$(find dist/assets -name '*.js' ! -name '*matrix-crypto*' -exec gzip -c {} \; | wc -c)
+          TOTAL_KB=$((TOTAL / 1024))
+          echo "Total JS bundle (gzipped, excluding crypto WASM): ${TOTAL_KB}KB"
+          if [ "$TOTAL_KB" -gt 400 ]; then
+            echo "::error::JS bundle exceeds 400KB gzipped target: ${TOTAL_KB}KB"
+            exit 1
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist/
+
+  # ==========================================================================
+  # SBOM Generation
+  # ==========================================================================
+  sbom:
+    name: SBOM Generation
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist/
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          path: apps/web/
+          output-file: sbom.json
+          format: cyclonedx-json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
+  # ==========================================================================
+  # Container Security Scan
+  # ==========================================================================
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image:
+          - matrixdotorg/synapse:latest
+          - caddy:2-alpine
+          - coturn/coturn:latest
+          - livekit/livekit-server:latest
+          - postgres:16-alpine
+    steps:
+      - name: Scan ${{ matrix.image }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ matrix.image }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+
+  # ==========================================================================
+  # OWASP ZAP Baseline Scan (runs against deployed instance)
+  # ==========================================================================
+  # zap-scan:
+  #   name: OWASP ZAP Baseline
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   if: github.ref == 'refs/heads/main'
+  #   steps:
+  #     - name: ZAP Baseline Scan
+  #       uses: zaproxy/action-baseline@v0.14.0
+  #       with:
+  #         target: 'https://your-staging-domain.com'
+  #         rules_file_name: '.zap/rules.tsv'
+  #         fail_action: true

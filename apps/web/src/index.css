@@ -1,0 +1,171 @@
+/* =============================================================================
+   192.168.6 Design System — Tailwind CSS 4
+   =============================================================================
+   Monochrome palette (9-step neutral) + 1 accent color
+   Dark/light mode via prefers-color-scheme + manual toggle
+   WCAG AA contrast, system-ui font stack
+   ============================================================================= */
+
+@import "tailwindcss";
+
+@theme {
+  /* Neutral scale (9 steps) */
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f4f4f5;
+  --color-neutral-200: #e4e4e7;
+  --color-neutral-300: #d4d4d8;
+  --color-neutral-400: #a1a1aa;
+  --color-neutral-500: #71717a;
+  --color-neutral-600: #52525b;
+  --color-neutral-700: #3f3f46;
+  --color-neutral-800: #27272a;
+  --color-neutral-900: #18181b;
+  --color-neutral-950: #0a0a0b;
+
+  /* Accent color — Teal */
+  --color-accent-50: #f0fdfa;
+  --color-accent-100: #ccfbf1;
+  --color-accent-200: #99f6e4;
+  --color-accent-300: #5eead4;
+  --color-accent-400: #2dd4bf;
+  --color-accent-500: #14b8a6;
+  --color-accent-600: #0d9488;
+  --color-accent-700: #0f766e;
+  --color-accent-800: #115e59;
+  --color-accent-900: #134e4a;
+
+  /* Semantic colors */
+  --color-verified: #22c55e;
+  --color-unverified: #f59e0b;
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* Font */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Touch target minimum */
+  --size-touch: 44px;
+}
+
+@layer base {
+  :root {
+    --bg-primary: var(--color-neutral-50);
+    --bg-secondary: #ffffff;
+    --bg-tertiary: var(--color-neutral-100);
+    --bg-hover: var(--color-neutral-200);
+    --bg-active: var(--color-neutral-300);
+
+    --text-primary: var(--color-neutral-900);
+    --text-secondary: var(--color-neutral-600);
+    --text-tertiary: var(--color-neutral-400);
+
+    --border-primary: var(--color-neutral-200);
+    --border-secondary: var(--color-neutral-100);
+
+    --accent: var(--color-accent-600);
+    --accent-hover: var(--color-accent-700);
+    --accent-text: #ffffff;
+
+    color-scheme: light;
+  }
+
+  .dark {
+    --bg-primary: var(--color-neutral-950);
+    --bg-secondary: var(--color-neutral-900);
+    --bg-tertiary: var(--color-neutral-800);
+    --bg-hover: var(--color-neutral-700);
+    --bg-active: var(--color-neutral-600);
+
+    --text-primary: var(--color-neutral-50);
+    --text-secondary: var(--color-neutral-400);
+    --text-tertiary: var(--color-neutral-500);
+
+    --border-primary: var(--color-neutral-800);
+    --border-secondary: var(--color-neutral-700);
+
+    --accent: var(--color-accent-400);
+    --accent-hover: var(--color-accent-300);
+    --accent-text: var(--color-neutral-950);
+
+    color-scheme: dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light) {
+      --bg-primary: var(--color-neutral-950);
+      --bg-secondary: var(--color-neutral-900);
+      --bg-tertiary: var(--color-neutral-800);
+      --bg-hover: var(--color-neutral-700);
+      --bg-active: var(--color-neutral-600);
+
+      --text-primary: var(--color-neutral-50);
+      --text-secondary: var(--color-neutral-400);
+      --text-tertiary: var(--color-neutral-500);
+
+      --border-primary: var(--color-neutral-800);
+      --border-secondary: var(--color-neutral-700);
+
+      --accent: var(--color-accent-400);
+      --accent-hover: var(--color-accent-300);
+      --accent-text: var(--color-neutral-950);
+
+      color-scheme: dark;
+    }
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100dvh;
+  }
+
+  #root {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+@layer utilities {
+  .touch-target {
+    min-width: var(--size-touch, 44px);
+    min-height: var(--size-touch, 44px);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}

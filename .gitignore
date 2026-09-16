@@ -1,0 +1,56 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.p12
+
+# Generated configs (from templates)
+infra/synapse/homeserver.generated.yaml
+infra/synapse/signing.key
+
+# Docker volumes
+postgres_data/
+synapse_data/
+caddy_data/
+livekit_data/
+
+# Generated configs (contain secrets)
+infra/synapse/generated/
+infra/coturn/generated/
+infra/livekit/generated/
+infra/coturn/certs/
+infra/web-dist/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test & coverage
+coverage/
+test-results/
+playwright-report/
+
+# Build artifacts
+sbom.json
+*.tar.gz

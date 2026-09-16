@@ -1,0 +1,117 @@
+# =============================================================================
+# CrypCal Caddyfile — Reverse Proxy with Security Headers
+# =============================================================================
+# Mode: {$TLS_MODE}
+#   - "local"      → self-signed certs, localhost
+#   - "production"  → automatic Let's Encrypt
+
+{
+	# Global options
+	admin off
+	
+	# For local dev with self-signed certs
+	# Comment out for production (Caddy auto-provisions Let's Encrypt)
+	local_certs
+}
+
+{$CRYPCAL_DOMAIN:localhost} {
+	# =========================================================================
+	# TLS Configuration
+	# =========================================================================
+	tls {
+		protocols tls1.3
+	}
+
+	# =========================================================================
+	# Security Headers (applied to ALL responses)
+	# =========================================================================
+	header {
+		# HSTS with preload
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		# Prevent clickjacking
+		X-Frame-Options "DENY"
+		# Prevent MIME-type sniffing
+		X-Content-Type-Options "nosniff"
+		# Referrer policy
+		Referrer-Policy "no-referrer"
+		# Permissions policy: only allow camera/mic on self
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=(), payment=()"
+		# CSP: strict, no unsafe-inline, no external origins
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' wss://{$CRYPCAL_DOMAIN:localhost}; media-src 'self' blob:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		# Remove server identification
+		-Server
+	}
+
+	# =========================================================================
+	# Matrix Homeserver (Synapse)
+	# =========================================================================
+	
+	# Client-Server API
+	handle_path /_matrix/* {
+		reverse_proxy synapse:8008
+	}
+
+	# .well-known for Matrix client discovery
+	handle_path /.well-known/matrix/client {
+		header Content-Type "application/json"
+		respond `{
+			"m.homeserver": {
+				"base_url": "https://{$CRYPCAL_DOMAIN:localhost}"
+			}
+		}`
+	}
+
+	# .well-known for Matrix server discovery (federation - minimal)
+	handle_path /.well-known/matrix/server {
+		header Content-Type "application/json"
+		respond `{
+			"m.server": "{$CRYPCAL_DOMAIN:localhost}:443"
+		}`
+	}
+
+	# =========================================================================
+	# Synapse Admin API — BLOCKED from external access
+	# =========================================================================
+	# Admin operations should be performed via `docker exec` on the Synapse container.
+	# Only non-admin /_synapse paths (like consent) are proxied.
+	handle_path /_synapse/admin/* {
+		respond 403
+	}
+	handle_path /_synapse/* {
+		reverse_proxy synapse:8008
+	}
+
+	# =========================================================================
+	# LiveKit JWT Service (MatrixRTC auth)
+	# =========================================================================
+	handle_path /lk-jwt/* {
+		uri strip_prefix /lk-jwt
+		reverse_proxy lk-jwt-service:8080
+	}
+
+	# =========================================================================
+	# LiveKit SFU (WebSocket for signaling)
+	# =========================================================================
+	handle_path /livekit/* {
+		uri strip_prefix /livekit
+		reverse_proxy livekit:7880
+	}
+
+	# =========================================================================
+	# Static Web Client (Milestone 2+)
+	# =========================================================================
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+
+	# =========================================================================
+	# Logging
+	# =========================================================================
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}

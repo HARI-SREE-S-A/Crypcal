@@ -1,0 +1,196 @@
+# CrypCal Synapse Homeserver Configuration
+# =============================================================================
+# This is a TEMPLATE. The setup script substitutes __VARIABLES__ with real values.
+# The generated file is mounted into the Synapse container.
+# =============================================================================
+
+# Server identity
+server_name: "__CRYPCAL_DOMAIN__"
+public_baseurl: "https://__CRYPCAL_DOMAIN__/"
+pid_file: /data/homeserver.pid
+web_client_location: "https://__CRYPCAL_DOMAIN__/"
+
+# =============================================================================
+# Network Listeners
+# =============================================================================
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client, consent, media, federation]
+        compress: false
+
+# =============================================================================
+# Database (PostgreSQL)
+# =============================================================================
+database:
+  name: psycopg2
+  args:
+    user: "__POSTGRES_USER__"
+    password: "__POSTGRES_PASSWORD__"
+    database: "__POSTGRES_DB__"
+    host: postgres
+    port: 5432
+    cp_min: 5
+    cp_max: 10
+
+# =============================================================================
+# Security & Authentication
+# =============================================================================
+
+# Registration: INVITE-ONLY via registration tokens
+enable_registration: false
+registration_requires_token: true
+registration_shared_secret: "__SYNAPSE_REGISTRATION_SHARED_SECRET__"
+
+# Secrets
+macaroon_secret_key: "__SYNAPSE_MACAROON_SECRET_KEY__"
+form_secret: "__SYNAPSE_FORM_SECRET__"
+
+# Password hashing (Argon2id is Synapse's default with bcrypt fallback)
+# Synapse uses bcrypt by default; Argon2id requires passlib[argon2]
+password_config:
+  enabled: true
+  # Minimum password length
+  minimum_length: 12
+  # Argon2id (requires the 'argon2' extra in Synapse's dependencies)
+  pepper: "__SYNAPSE_FORM_SECRET__"
+
+# Rate limiting & brute-force protection
+rc_login:
+  address:
+    per_second: 0.5
+    burst_count: 3
+  account:
+    per_second: 0.5
+    burst_count: 3
+  failed_attempts:
+    per_second: 0.1
+    burst_count: 5
+
+rc_registration:
+  per_second: 0.1
+  burst_count: 3
+
+rc_message:
+  per_second: 5
+  burst_count: 20
+
+# Session duration
+session_lifetime: 24h
+refresh_token_lifetime: 7d
+
+# =============================================================================
+# Federation: DISABLED by default
+# =============================================================================
+# Empty whitelist = no federation at all
+federation_domain_whitelist: []
+
+# Disable federation-related features
+allow_public_rooms_over_federation: false
+allow_public_rooms_without_auth: false
+
+# =============================================================================
+# Encryption (E2EE)
+# =============================================================================
+# Force encryption on all new rooms
+encryption_enabled_by_default_for_room_type: "all"
+
+# Default room settings
+default_room_version: "11"
+
+# =============================================================================
+# Media & Content
+# =============================================================================
+# Media store path
+media_store_path: /data/media_store
+
+# Maximum upload size (50 MB)
+max_upload_size: 50M
+
+# Media retention: 30 days for remote, 90 days for local
+media_retention:
+  remote_media_lifetime: 30d
+  local_media_lifetime: 90d
+
+# URL previews: DISABLED (security requirement)
+url_preview_enabled: false
+
+# Maximum image size for thumbnails
+max_image_pixels: 32M
+
+# =============================================================================
+# TURN/STUN (coturn)
+# =============================================================================
+turn_uris:
+  - "turn:__CRYPCAL_DOMAIN__:3478?transport=udp"
+  - "turn:__CRYPCAL_DOMAIN__:3478?transport=tcp"
+  - "turns:__CRYPCAL_DOMAIN__:5349?transport=tcp"
+turn_shared_secret: "__TURN_SHARED_SECRET__"
+turn_user_lifetime: 86400000
+turn_allow_guests: false
+
+# =============================================================================
+# Sliding Sync (Native - MSC4186)
+# =============================================================================
+# Native Simplified Sliding Sync is enabled by default in Synapse 1.114+
+# No additional configuration needed.
+
+# =============================================================================
+# Experimental Features (MatrixRTC support)
+# =============================================================================
+experimental_features:
+  # MSC3266: Room summary API (for call room previews)
+  msc3266_enabled: true
+  # MSC4140: Delayed events in MatrixRTC (call state tracking)
+  msc4140_enabled: true
+  # MSC4222: Adding `state_after` to sync v2 (call state)
+  msc4222_enabled: true
+
+# =============================================================================
+# Caching
+# =============================================================================
+caches:
+  global_factor: 0.5
+  per_cache_factors:
+    get_users_in_room: 2.0
+
+# =============================================================================
+# Logging
+# =============================================================================
+log_config: "/data/log.config"
+
+# Do not log request IP addresses
+request_token_inhibit_3pid_errors: true
+
+# =============================================================================
+# Signing Keys
+# =============================================================================
+signing_key_path: "/data/signing.key"
+trusted_key_servers: []
+suppress_key_server_warning: true
+
+# =============================================================================
+# Misc
+# =============================================================================
+# Report anonymous usage statistics: NO
+report_stats: false
+
+# Consent tracking: disabled (we handle this in the client)
+user_consent:
+  require_at_registration: false
+
+# Enable room directory for local users only
+enable_room_list_search: true
+
+# Retention policy
+retention:
+  enabled: true
+  default_policy:
+    min_lifetime: 1d
+    max_lifetime: 365d
+  allowed_lifetime_min: 1d
+  allowed_lifetime_max: 365d

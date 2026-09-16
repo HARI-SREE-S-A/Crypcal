@@ -98,8 +98,7 @@ export function AdminPanel() {
   const filteredAllUsers = allUsers.filter(
     (u) =>
       u.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.short_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.matrix_user_id.toLowerCase().includes(searchQuery.toLowerCase()),
+      u.short_id.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   // If not authenticated, show admin login prompt
@@ -302,14 +301,11 @@ export function AdminPanel() {
                           <h3 className="text-sm font-semibold">{user.display_name}</h3>
                           <span
                             className="px-2 py-0.5 text-[10px] font-mono rounded"
-                            style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+                            style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--accent)' }}
                           >
-                            ID: {user.short_id}
+                            ID: {formatShortId(user.short_id)}
                           </span>
                         </div>
-                        <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                          {user.matrix_user_id}
-                        </p>
                         <span className="text-[11px] opacity-70" style={{ color: 'var(--text-tertiary)' }}>
                           Requested: {new Date(user.created_at).toLocaleString()}
                         </span>
@@ -350,7 +346,7 @@ export function AdminPanel() {
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-tertiary)' }} />
               <input
                 type="text"
-                placeholder="Search by name, 6-character ID, or Matrix handle..."
+                placeholder="Search by name or 6-character ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full rounded-lg pl-9 pr-4 py-2 text-sm outline-none border"
@@ -386,9 +382,6 @@ export function AdminPanel() {
                     </button>
                     <div>
                       <span className="font-medium">{user.display_name}</span>
-                      <span className="ml-2 font-mono text-xs opacity-70" style={{ color: 'var(--text-secondary)' }}>
-                        {user.matrix_user_id}
-                      </span>
                     </div>
                   </div>
 

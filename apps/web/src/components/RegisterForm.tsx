@@ -1,18 +1,20 @@
 /**
  * RegisterForm — Request access to 192.168.6.
  *
- * Users provide their display name and Matrix username.
+ * Users provide their display name and a secret password/PIN.
  * Generates their unique 6-character ID and submits for admin approval.
+ * ZERO third-party accounts required.
  */
 import { useState, type FormEvent } from 'react';
-import { Shield, Sparkles, UserPlus, ArrowLeft, ExternalLink, KeyRound } from 'lucide-react';
+import { Shield, Sparkles, UserPlus, ArrowLeft, KeyRound } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { requestAccess } from '@/lib/supabase';
 import { APP_NAME } from '@/utils/constants';
 
 export function RegisterForm() {
   const [displayName, setDisplayName] = useState('');
-  const [matrixHandle, setMatrixHandle] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -21,22 +23,18 @@ export function RegisterForm() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!displayName.trim() || !matrixHandle.trim()) return;
+    if (!displayName.trim() || !password) return;
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match. Please verify and try again.');
+      return;
+    }
 
     setIsLoading(true);
     setError('');
 
     try {
-      // Normalize Matrix User ID (@username:matrix.org)
-      let fullMatrixId = matrixHandle.trim();
-      if (!fullMatrixId.startsWith('@')) {
-        fullMatrixId = `@${fullMatrixId}`;
-      }
-      if (!fullMatrixId.includes(':')) {
-        fullMatrixId = `${fullMatrixId}:matrix.org`;
-      }
-
-      const userRecord = await requestAccess(displayName.trim(), fullMatrixId);
+      const userRecord = await requestAccess(displayName.trim(), password);
       setPendingShortId(userRecord.short_id);
       setView('pending');
     } catch (err) {
@@ -75,12 +73,12 @@ export function RegisterForm() {
               Join {APP_NAME}
             </h1>
             <p className="mt-1 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-              Request access and receive your unique 6-character ID
+              Get your unique 6-character ID and request access
             </p>
           </div>
         </div>
 
-        {/* Info Box */}
+        {/* How it works */}
         <div
           className="mb-5 rounded-lg p-3 text-xs leading-relaxed"
           style={{
@@ -94,11 +92,11 @@ export function RegisterForm() {
             <span>How it works</span>
           </div>
           <p className="mt-1.5">
-            1. Enter your name and Matrix handle.
+            1. Enter your name and create a password or PIN.
             <br />
-            2. Get your unique 6-character ID (like a private phone number).
+            2. You receive your unique 6-character ID (e.g. <b>KPR472</b>).
             <br />
-            3. The admin approves your request, and you can begin chatting.
+            3. The admin approves your request, and you can chat immediately!
           </p>
         </div>
 
@@ -107,7 +105,7 @@ export function RegisterForm() {
           {/* Display Name */}
           <div className="flex flex-col gap-1.5">
             <label htmlFor="displayName" className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-              Your Display Name
+              Your Name
             </label>
             <input
               id="displayName"
@@ -116,6 +114,7 @@ export function RegisterForm() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="e.g. Sarah Connor"
+              autoFocus
               required
               disabled={isLoading}
               className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-colors"
@@ -127,42 +126,50 @@ export function RegisterForm() {
             />
           </div>
 
-          {/* Matrix User ID */}
+          {/* Password / PIN */}
           <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <label htmlFor="matrixHandle" className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                Matrix Username
-              </label>
-              <a
-                href="https://app.element.io/#/register"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-[11px] underline opacity-80 hover:opacity-100 transition-opacity"
-                style={{ color: 'var(--accent)' }}
-              >
-                <span>Free account on matrix.org</span>
-                <ExternalLink size={10} />
-              </a>
-            </div>
+            <label htmlFor="password" className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+              Create a Password or PIN
+            </label>
             <input
-              id="matrixHandle"
-              name="matrixHandle"
-              type="text"
-              value={matrixHandle}
-              onChange={(e) => setMatrixHandle(e.target.value)}
-              placeholder="e.g. sarah or @sarah:matrix.org"
+              id="password"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
               required
               disabled={isLoading}
-              className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-colors font-mono"
+              className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-colors"
               style={{
                 backgroundColor: 'var(--bg-tertiary)',
                 color: 'var(--text-primary)',
                 border: '1px solid var(--border-primary)',
               }}
             />
-            <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-              Used to route your encrypted messages globally via matrix.org.
-            </p>
+          </div>
+
+          {/* Confirm Password / PIN */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="confirmPassword" className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+              Confirm Password or PIN
+            </label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              disabled={isLoading}
+              className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-colors"
+              style={{
+                backgroundColor: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-primary)',
+              }}
+            />
           </div>
 
           {/* Error */}
@@ -175,7 +182,7 @@ export function RegisterForm() {
           {/* Submit */}
           <button
             type="submit"
-            disabled={isLoading || !displayName.trim() || !matrixHandle.trim()}
+            disabled={isLoading || !displayName.trim() || !password}
             className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-opacity disabled:opacity-50 cursor-pointer"
             style={{
               backgroundColor: 'var(--accent)',
@@ -187,7 +194,7 @@ export function RegisterForm() {
             ) : (
               <>
                 <KeyRound size={15} />
-                <span>Request Access & Generate ID</span>
+                <span>Get My ID & Request Access</span>
               </>
             )}
           </button>
@@ -202,7 +209,7 @@ export function RegisterForm() {
             style={{ color: 'var(--text-secondary)' }}
           >
             <ArrowLeft size={13} />
-            <span>Already have access? Back to Sign in</span>
+            <span>Already approved? Back to Sign in</span>
           </button>
         </div>
 

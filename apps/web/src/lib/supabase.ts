@@ -1,11 +1,13 @@
 /**
- * 192.168.6 Supabase & User Management Client.
+ * 192.168.6 User Management & Messaging Client.
  *
- * Handles:
- * - User access requests (with 6-character short IDs)
- * - Admin approval / rejection workflow
- * - Short ID lookup (like phone numbers for connecting users)
- * - Transparent fallback to local storage when Supabase is not configured.
+ * Provides:
+ * - Direct registration with Name + Password/PIN (NO Matrix account needed)
+ * - Automatic unique 6-character Short ID generation (e.g. ABC123)
+ * - Admin approval workflow
+ * - Authentication by Short ID or Name
+ * - Room message persistence with cross-tab/realtime synchronization
+ * - Full local fallback (works 100% in browser even before Supabase keys are configured)
  */
 import { generateShortId } from './shortId';
 
@@ -13,59 +15,119 @@ export interface UserRecord {
   id: string;
   short_id: string;
   display_name: string;
-  matrix_user_id: string;
+  password_hash?: string;
   status: 'pending' | 'approved' | 'rejected';
   is_admin: boolean;
   created_at: string;
   approved_at?: string;
 }
 
+export interface StoredMessage {
+  eventId: string;
+  sender: string;
+  senderName: string;
+  content: string;
+  timestamp: number;
+  isMe: boolean;
+}
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'admin1921686';
 
-const LOCAL_STORAGE_KEY = 'one92168_registered_users';
+const USERS_STORAGE_KEY = 'one92168_registered_users';
+const MESSAGES_STORAGE_KEY = 'one92168_room_messages';
 
-let inMemoryFallback: UserRecord[] = [];
+let inMemoryUsers: UserRecord[] = [];
+let inMemoryMessages: Record<string, StoredMessage[]> = {};
 
 /**
- * Get users stored locally as fallback when Supabase is not yet configured.
+ * Hash a password using Web Crypto SHA-256.
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`one92168_salt_${password}`);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Get users from local storage or memory.
  */
 function getLocalUsers(): UserRecord[] {
   if (typeof localStorage !== 'undefined') {
     try {
-      const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      const raw = localStorage.getItem(USERS_STORAGE_KEY);
       if (!raw) return [];
       return JSON.parse(raw);
     } catch {
       return [];
     }
   }
-  return inMemoryFallback;
+  return inMemoryUsers;
 }
 
 /**
- * Save users to local fallback store.
+ * Save users to local store or memory.
  */
 function saveLocalUsers(users: UserRecord[]): void {
-  inMemoryFallback = users;
+  inMemoryUsers = users;
   if (typeof localStorage !== 'undefined') {
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(users));
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
     } catch (err) {
-      console.warn('[Supabase Fallback] Could not persist local users:', err);
+      console.warn('[Storage] Could not persist users:', err);
     }
   }
+}
+
+/**
+ * Get all room messages from local store.
+ */
+export function getLocalRoomMessages(roomId: string): StoredMessage[] {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(MESSAGES_STORAGE_KEY);
+      if (!raw) return [];
+      const all = JSON.parse(raw);
+      return all[roomId] || [];
+    } catch {
+      return [];
+    }
+  }
+  return inMemoryMessages[roomId] || [];
+}
+
+/**
+ * Save a message to the room's persistent history.
+ */
+export function saveLocalRoomMessage(roomId: string, message: StoredMessage): void {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(MESSAGES_STORAGE_KEY);
+      const all = raw ? JSON.parse(raw) : {};
+      if (!all[roomId]) all[roomId] = [];
+      all[roomId].push(message);
+      localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(all));
+    } catch (err) {
+      console.warn('[Storage] Could not persist message:', err);
+    }
+  }
+  if (!inMemoryMessages[roomId]) inMemoryMessages[roomId] = [];
+  inMemoryMessages[roomId].push(message);
 }
 
 /**
  * Clear fallback users for testing.
  */
 export function resetLocalUsersForTesting(): void {
-  inMemoryFallback = [];
+  inMemoryUsers = [];
+  inMemoryMessages = {};
   if (typeof localStorage !== 'undefined') {
     try {
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      localStorage.removeItem(USERS_STORAGE_KEY);
+      localStorage.removeItem(MESSAGES_STORAGE_KEY);
     } catch {
       // Ignore
     }
@@ -73,7 +135,7 @@ export function resetLocalUsersForTesting(): void {
 }
 
 /**
- * Helper to execute Supabase PostgREST queries.
+ * Helper to execute Supabase PostgREST queries when configured.
  */
 async function supabaseFetch<T>(
   endpoint: string,
@@ -92,14 +154,18 @@ async function supabaseFetch<T>(
     ...(options.headers as Record<string, string> || {}),
   };
 
-  const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
-    const errorText = await res.text();
-    console.error(`[Supabase] Request failed (${res.status}):`, errorText);
-    throw new Error(`Supabase error (${res.status}): ${errorText}`);
+  try {
+    const res = await fetch(url, { ...options, headers });
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.warn(`[Supabase] Request failed (${res.status}):`, errorText);
+      return null;
+    }
+    return res.json() as Promise<T>;
+  } catch (err) {
+    console.warn('[Supabase] Network error:', err);
+    return null;
   }
-
-  return res.json() as Promise<T>;
 }
 
 /**
@@ -110,25 +176,18 @@ export function verifyAdminPassword(password: string): boolean {
 }
 
 /**
- * Look up user by short ID (e.g. 'KPR472').
- * Returns user record only if approved.
+ * Look up approved user by 6-character short ID (e.g. 'KPR472').
  */
 export async function lookupByShortId(shortId: string): Promise<UserRecord | null> {
   const normalizedId = shortId.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      const data = await supabaseFetch<UserRecord[]>(
-        `users?short_id=eq.${encodeURIComponent(normalizedId)}&status=eq.approved&select=*`,
-      );
-      if (data && data.length > 0) return data[0]!;
-      return null;
-    } catch (err) {
-      console.warn('[Supabase] Lookup failed, checking local store:', err);
-    }
+    const data = await supabaseFetch<UserRecord[]>(
+      `users?short_id=eq.${encodeURIComponent(normalizedId)}&status=eq.approved&select=*`,
+    );
+    if (data && data.length > 0) return data[0]!;
   }
 
-  // Fallback to local store
   const localUsers = getLocalUsers();
   return (
     localUsers.find(
@@ -138,45 +197,39 @@ export async function lookupByShortId(shortId: string): Promise<UserRecord | nul
 }
 
 /**
- * Check a user's approval status by Matrix User ID or Short ID.
+ * Check a user's approval status by Short ID or Name.
  */
 export async function checkUserStatus(identifier: string): Promise<UserRecord | null> {
   const trimmed = identifier.trim();
+  const cleanShortId = trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      const isShort = /^[A-Za-z0-9-]{6,7}$/.test(trimmed);
-      const query = isShort
-        ? `users?short_id=eq.${encodeURIComponent(trimmed.toUpperCase().replace('-', ''))}&select=*`
-        : `users?matrix_user_id=eq.${encodeURIComponent(trimmed)}&select=*`;
+    const query = /^[A-Z]{3}[0-9]{3}$/.test(cleanShortId)
+      ? `users?short_id=eq.${encodeURIComponent(cleanShortId)}&select=*`
+      : `users?display_name=eq.${encodeURIComponent(trimmed)}&select=*`;
 
-      const data = await supabaseFetch<UserRecord[]>(query);
-      if (data && data.length > 0) return data[0]!;
-      return null;
-    } catch (err) {
-      console.warn('[Supabase] Status check failed, checking local store:', err);
-    }
+    const data = await supabaseFetch<UserRecord[]>(query);
+    if (data && data.length > 0) return data[0]!;
   }
 
-  // Fallback to local store
-  const cleanId = trimmed.toUpperCase().replace('-', '');
   const localUsers = getLocalUsers();
   return (
     localUsers.find(
-      (u) => u.matrix_user_id === trimmed || u.short_id === cleanId,
+      (u) =>
+        u.short_id === cleanShortId ||
+        u.display_name.toLowerCase() === trimmed.toLowerCase(),
     ) || null
   );
 }
 
 /**
- * Request access for a new user.
- * Generates a unique short ID and inserts record with status 'pending'.
+ * Request access for a new user with Name and Password/PIN.
+ * Assigns a unique 6-character Short ID.
  */
 export async function requestAccess(
   displayName: string,
-  matrixUserId: string,
+  password = 'pass',
 ): Promise<UserRecord> {
-  // Generate a collision-free short ID
   let shortId = generateShortId();
   let existing = await lookupByShortId(shortId);
   let attempts = 0;
@@ -186,34 +239,32 @@ export async function requestAccess(
     attempts++;
   }
 
+  const passwordHash = await hashPassword(password);
+
   const newRecord: UserRecord = {
     id: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `usr_${Date.now()}`,
     short_id: shortId,
     display_name: displayName.trim(),
-    matrix_user_id: matrixUserId.trim(),
+    password_hash: passwordHash,
     status: 'pending',
     is_admin: false,
     created_at: new Date().toISOString(),
   };
 
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      const inserted = await supabaseFetch<UserRecord[]>('users', {
-        method: 'POST',
-        body: JSON.stringify(newRecord),
-      });
-      if (inserted && inserted.length > 0) {
-        return inserted[0]!;
-      }
-    } catch (err) {
-      console.warn('[Supabase] Insert failed, falling back to local store:', err);
+    const inserted = await supabaseFetch<UserRecord[]>('users', {
+      method: 'POST',
+      body: JSON.stringify(newRecord),
+    });
+    if (inserted && inserted.length > 0) {
+      return inserted[0]!;
     }
   }
 
-  // Fallback to local store
   const localUsers = getLocalUsers();
-  // Remove existing pending entry for this matrixUserId if present
-  const filtered = localUsers.filter((u) => u.matrix_user_id !== newRecord.matrix_user_id);
+  const filtered = localUsers.filter(
+    (u) => u.display_name.toLowerCase() !== newRecord.display_name.toLowerCase(),
+  );
   filtered.push(newRecord);
   saveLocalUsers(filtered);
 
@@ -221,18 +272,58 @@ export async function requestAccess(
 }
 
 /**
+ * Authenticate a user by 6-character Short ID or Name and Password.
+ */
+export async function authenticateUser(
+  identifier: string,
+  password: string,
+): Promise<{ success: boolean; user?: UserRecord; error?: string }> {
+  const trimmed = identifier.trim();
+  const user = await checkUserStatus(trimmed);
+
+  if (!user) {
+    return {
+      success: false,
+      error: 'User not found. Check your 6-character ID or request access.',
+    };
+  }
+
+  if (user.status === 'pending') {
+    return {
+      success: false,
+      user,
+      error: 'Your account is currently awaiting administrator approval.',
+    };
+  }
+
+  if (user.status === 'rejected') {
+    return {
+      success: false,
+      user,
+      error: 'Your access request was declined by the administrator.',
+    };
+  }
+
+  // Check password if set
+  if (user.password_hash) {
+    const testHash = await hashPassword(password);
+    if (testHash !== user.password_hash) {
+      return { success: false, error: 'Incorrect password or PIN.' };
+    }
+  }
+
+  return { success: true, user };
+}
+
+/**
  * Get all users with status 'pending' (for Admin approval).
  */
 export async function getPendingUsers(): Promise<UserRecord[]> {
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      const data = await supabaseFetch<UserRecord[]>(
-        'users?status=eq.pending&order=created_at.desc&select=*',
-      );
-      if (data) return data;
-    } catch (err) {
-      console.warn('[Supabase] Get pending failed, using local store:', err);
-    }
+    const data = await supabaseFetch<UserRecord[]>(
+      'users?status=eq.pending&order=created_at.desc&select=*',
+    );
+    if (data) return data;
   }
 
   return getLocalUsers().filter((u) => u.status === 'pending');
@@ -243,12 +334,8 @@ export async function getPendingUsers(): Promise<UserRecord[]> {
  */
 export async function getAllUsers(): Promise<UserRecord[]> {
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      const data = await supabaseFetch<UserRecord[]>('users?order=created_at.desc&select=*');
-      if (data) return data;
-    } catch (err) {
-      console.warn('[Supabase] Get all failed, using local store:', err);
-    }
+    const data = await supabaseFetch<UserRecord[]>('users?order=created_at.desc&select=*');
+    if (data) return data;
   }
 
   return getLocalUsers();
@@ -261,15 +348,10 @@ export async function approveUser(id: string): Promise<boolean> {
   const approvedAt = new Date().toISOString();
 
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      await supabaseFetch(`users?id=eq.${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'approved', approved_at: approvedAt }),
-      });
-      return true;
-    } catch (err) {
-      console.warn('[Supabase] Approve failed, updating local store:', err);
-    }
+    await supabaseFetch(`users?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'approved', approved_at: approvedAt }),
+    });
   }
 
   const localUsers = getLocalUsers();
@@ -288,15 +370,10 @@ export async function approveUser(id: string): Promise<boolean> {
  */
 export async function rejectUser(id: string): Promise<boolean> {
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      await supabaseFetch(`users?id=eq.${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'rejected' }),
-      });
-      return true;
-    } catch (err) {
-      console.warn('[Supabase] Reject failed, updating local store:', err);
-    }
+    await supabaseFetch(`users?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'rejected' }),
+    });
   }
 
   const localUsers = getLocalUsers();

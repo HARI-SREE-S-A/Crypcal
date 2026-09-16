@@ -10,7 +10,7 @@ import type { MatrixClient } from 'matrix-js-sdk';
 import { useRooms } from '@/hooks/useRooms';
 import { useAppStore } from '@/lib/store';
 import { createEncryptedRoom } from '@/lib/encryption';
-import { lookupByShortId } from '@/lib/supabase';
+import { lookupByShortId, checkUserStatus } from '@/lib/supabase';
 import { formatTime } from '@/utils/formatTime';
 import { APP_NAME } from '@/utils/constants';
 
@@ -50,6 +50,7 @@ export function ConversationList({ client }: ConversationListProps) {
 
     try {
       let targetUserId = rawInput;
+      let targetName = rawInput;
 
       // Check if input is a 6-character short ID (e.g. "KPR472" or "KPR-472")
       const cleanShortId = rawInput.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -60,22 +61,30 @@ export function ConversationList({ client }: ConversationListProps) {
           setIsSearchingUser(false);
           return;
         }
-        targetUserId = friend.matrix_user_id;
-      } else if (!targetUserId.startsWith('@')) {
-        // Auto-prefix @ and domain if standard username
-        let domain = 'matrix.org';
-        try {
-          domain = new URL(client.baseUrl).hostname;
-        } catch {
-          // Keep default
+        targetUserId = `@${friend.short_id}:192.168.6`;
+        targetName = `${friend.display_name} (${friend.short_id})`;
+      } else {
+        const byName = await checkUserStatus(rawInput);
+        if (byName && byName.status === 'approved') {
+          targetUserId = `@${byName.short_id}:192.168.6`;
+          targetName = `${byName.display_name} (${byName.short_id})`;
         }
-        targetUserId = `@${targetUserId}:${domain}`;
       }
 
-      const roomId = await createEncryptedRoom(client, {
-        inviteUserIds: [targetUserId],
-        isDirect: true,
-      });
+      const clientAny = client as any;
+      let roomId = '';
+      if (typeof clientAny.createRoom === 'function') {
+        const res = await clientAny.createRoom({
+          name: targetName,
+          invite: [targetUserId],
+        });
+        roomId = res.room_id || res.roomId;
+      } else {
+        roomId = await createEncryptedRoom(client, {
+          inviteUserIds: [targetUserId],
+          isDirect: true,
+        });
+      }
 
       setIsCreating(false);
       setNewUserId('');
@@ -104,6 +113,25 @@ export function ConversationList({ client }: ConversationListProps) {
           <h1 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
             {APP_NAME}
           </h1>
+          {client && (
+            <button
+              type="button"
+              onClick={() => {
+                const uid = client.getUserId() || '';
+                const cleanId = uid.replace('@', '').replace(':192.168.6', '');
+                if (cleanId) navigator.clipboard.writeText(cleanId);
+              }}
+              className="ml-1 px-2 py-0.5 rounded border text-[11px] font-mono font-bold cursor-pointer transition-opacity hover:opacity-80"
+              style={{
+                backgroundColor: 'var(--bg-tertiary)',
+                borderColor: 'var(--border-primary)',
+                color: 'var(--accent)',
+              }}
+              title="Click to copy your 6-character ID"
+            >
+              ID: {(client.getUserId() || '').replace('@', '').replace(':192.168.6', '')}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button

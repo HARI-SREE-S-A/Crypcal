@@ -29,6 +29,16 @@ export function App() {
   useEffect(() => {
     const restore = async () => {
       try {
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem('one92168_session');
+          if (raw) {
+            const { display_name, short_id } = JSON.parse(raw);
+            const { createMockMatrixClient } = await import('@/lib/mockClient');
+            const client = createMockMatrixClient(display_name, short_id);
+            setClient(client);
+            return;
+          }
+        }
         const restored = await restoreSession();
         if (restored) {
           setClient(restored);

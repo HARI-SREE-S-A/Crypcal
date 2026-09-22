@@ -33,7 +33,7 @@ export interface StoredMessage {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'admin1921686';
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || '8907597543';
 
 const USERS_STORAGE_KEY = 'one92168_registered_users';
 const MESSAGES_STORAGE_KEY = 'one92168_room_messages';

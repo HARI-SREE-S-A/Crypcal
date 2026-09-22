@@ -10,7 +10,7 @@
  * Short IDs still work as input (auto-detected by AAA000 format).
  */
 import { useState, type FormEvent } from 'react';
-import { Lock, Eye, EyeOff, Shield, Sparkles, ShieldCheck, ArrowRight, UserPlus, Clock } from 'lucide-react';
+import { Lock, Eye, EyeOff, Shield, Sparkles, ShieldCheck, ArrowRight, Clock } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { findOrRegister } from '@/lib/supabase';
 import { APP_NAME } from '@/utils/constants';

@@ -29,6 +29,7 @@ export {
   lookupByShortId,
   checkUserStatus,
   requestAccess,
+  findOrRegister,
   getPendingUsers,
   getAllUsers,
   approveUser,

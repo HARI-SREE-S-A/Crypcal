@@ -1,32 +1,38 @@
 /**
- * LoginForm — Sign in with 6-character Short ID and Password/PIN.
+ * LoginForm — Unified authentication screen.
  *
- * Direct authentication without external Matrix accounts.
+ * Single-screen auth that auto-detects new vs. returning users:
+ * - Enter name + PIN → "Continue"
+ * - If the name exists and is approved → sign in
+ * - If the name exists and is pending → show inline status
+ * - If the name doesn't exist → auto-register and show pending screen
+ *
+ * Short IDs still work as input (auto-detected by AAA000 format).
  */
 import { useState, type FormEvent } from 'react';
-import { Lock, Eye, EyeOff, Shield, Sparkles, UserPlus, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Lock, Eye, EyeOff, Shield, Sparkles, ShieldCheck, ArrowRight, UserPlus, Clock } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
-import { authenticateUser } from '@/lib/supabase';
+import { findOrRegister } from '@/lib/supabase';
 import { APP_NAME } from '@/utils/constants';
 
 export function LoginForm() {
-  const [identifier, setIdentifier] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [statusHint, setStatusHint] = useState<'new' | 'pending' | null>(null);
 
   const setClient = useAppStore((s) => s.setClient);
   const setView = useAppStore((s) => s.setView);
   const setPendingShortId = useAppStore((s) => s.setPendingShortId);
-  const pendingShortId = useAppStore((s) => s.pendingShortId);
 
   const handleDemoLogin = async () => {
     const { createMockMatrixClient } = await import('@/lib/mockClient');
-    const mock = createMockMatrixClient(identifier.trim() || 'Alice', 'KPR472');
+    const mock = createMockMatrixClient(name.trim() || 'Alice', 'KPR472');
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('one92168_session', JSON.stringify({
-        display_name: identifier.trim() || 'Alice',
+        display_name: name.trim() || 'Alice',
         short_id: 'KPR472',
       }));
     }
@@ -35,42 +41,57 @@ export function LoginForm() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!identifier.trim() || !password) return;
+    if (!name.trim() || !password) return;
 
     setIsLoading(true);
     setError('');
+    setStatusHint(null);
 
     try {
-      const auth = await authenticateUser(identifier.trim(), password);
+      const result = await findOrRegister(name.trim(), password);
 
-      if (!auth.success) {
-        if (auth.user?.status === 'pending') {
-          setPendingShortId(auth.user.short_id);
-          setError('Your account is awaiting administrator approval.');
-        } else {
-          setError(auth.error || 'Invalid credentials. Please try again.');
+      switch (result.action) {
+        case 'login': {
+          // Approved user — sign in
+          const { createMockMatrixClient } = await import('@/lib/mockClient');
+          const client = createMockMatrixClient(result.user!.display_name, result.user!.short_id);
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('one92168_session', JSON.stringify({
+              display_name: result.user!.display_name,
+              short_id: result.user!.short_id,
+            }));
+          }
+          setClient(client);
+          break;
         }
-        setIsLoading(false);
-        return;
+
+        case 'registered': {
+          // New user — auto-registered, show pending screen
+          setPendingShortId(result.user!.short_id);
+          setView('pending');
+          break;
+        }
+
+        case 'pending': {
+          // Existing user still pending
+          setPendingShortId(result.user!.short_id);
+          setStatusHint('pending');
+          setError('Your account is awaiting administrator approval.');
+          break;
+        }
+
+        case 'rejected': {
+          setError('Your access request was declined by the administrator.');
+          break;
+        }
+
+        case 'error': {
+          setError(result.error || 'Something went wrong. Please try again.');
+          break;
+        }
       }
-
-      const { createMockMatrixClient } = await import('@/lib/mockClient');
-      const client = createMockMatrixClient(auth.user!.display_name, auth.user!.short_id);
-
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('one92168_session', JSON.stringify({
-          display_name: auth.user!.display_name,
-          short_id: auth.user!.short_id,
-        }));
-      }
-
-      setClient(client);
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Login failed. Please try again.');
-      }
+      setError(err instanceof Error ? err.message : 'Authentication failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -106,20 +127,40 @@ export function LoginForm() {
           </div>
         </div>
 
-        {/* Login Form */}
+        {/* How it works — subtle hint */}
+        <div
+          className="mb-5 rounded-lg p-3 text-xs leading-relaxed"
+          style={{
+            backgroundColor: 'var(--bg-tertiary)',
+            border: '1px solid var(--border-primary)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <div className="flex items-center gap-1.5 font-semibold" style={{ color: 'var(--text-primary)' }}>
+            <Sparkles size={14} style={{ color: 'var(--color-verified)' }} />
+            <span>One form. That's it.</span>
+          </div>
+          <p className="mt-1.5">
+            Enter your name and a PIN to sign in.
+            <br />
+            New here? We'll create your account automatically.
+          </p>
+        </div>
+
+        {/* Unified Auth Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {/* Identifier (Short ID or Name) */}
+          {/* Name Input */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="identifier" className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-              6-Character ID or Name
+            <label htmlFor="auth-name" className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+              Your Name or ID
             </label>
             <input
-              id="identifier"
-              name="identifier"
+              id="auth-name"
+              name="name"
               type="text"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="e.g. KPR472 or Sarah"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Sarah or KPR472"
               autoComplete="username"
               autoFocus
               required
@@ -133,14 +174,14 @@ export function LoginForm() {
             />
           </div>
 
-          {/* Password */}
+          {/* Password / PIN */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="password" className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+            <label htmlFor="auth-password" className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
               Password / PIN
             </label>
             <div className="relative flex items-center">
               <input
-                id="password"
+                id="auth-password"
                 name="password"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
@@ -170,17 +211,18 @@ export function LoginForm() {
 
           {/* Error & Pending Shortcut */}
           {error && (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               <p className="text-xs font-medium" style={{ color: 'var(--color-danger)' }} role="alert">
                 {error}
               </p>
-              {pendingShortId && (
+              {statusHint === 'pending' && (
                 <button
                   type="button"
                   onClick={() => setView('pending')}
                   className="flex items-center gap-1 text-xs font-semibold cursor-pointer underline"
                   style={{ color: 'var(--accent)' }}
                 >
+                  <Clock size={12} />
                   <span>View your pending ID & status</span>
                   <ArrowRight size={12} />
                 </button>
@@ -191,7 +233,7 @@ export function LoginForm() {
           {/* Submit */}
           <button
             type="submit"
-            disabled={isLoading || !identifier.trim() || !password}
+            disabled={isLoading || !name.trim() || !password}
             className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-opacity disabled:opacity-50 cursor-pointer"
             style={{
               backgroundColor: 'var(--accent)',
@@ -203,7 +245,7 @@ export function LoginForm() {
             ) : (
               <>
                 <Lock size={15} />
-                <span>Sign in</span>
+                <span>Continue</span>
               </>
             )}
           </button>
@@ -234,21 +276,6 @@ export function LoginForm() {
           >
             <Sparkles size={15} style={{ color: 'var(--color-verified)' }} />
             <span>Explore Demo Mode</span>
-          </button>
-
-          {/* Request Access Button */}
-          <button
-            type="button"
-            onClick={() => setView('register')}
-            className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors cursor-pointer border"
-            style={{
-              backgroundColor: 'var(--bg-secondary)',
-              color: 'var(--accent)',
-              borderColor: 'var(--border-primary)',
-            }}
-          >
-            <UserPlus size={15} />
-            <span>Request Access & Get ID</span>
           </button>
         </form>
 

@@ -1,7 +1,6 @@
 // Barrel exports for components
 export { ErrorBoundary } from './ErrorBoundary';
 export { LoginForm } from './LoginForm';
-export { RegisterForm } from './RegisterForm';
 export { PendingApproval } from './PendingApproval';
 export { AdminPanel } from './AdminPanel';
 export { ConversationList } from './ConversationList';

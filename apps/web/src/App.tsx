@@ -8,7 +8,6 @@ import { useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { restoreSession } from '@/lib/matrix';
 import { LoginForm } from '@/components/LoginForm';
-import { RegisterForm } from '@/components/RegisterForm';
 import { PendingApproval } from '@/components/PendingApproval';
 import { AdminPanel } from '@/components/AdminPanel';
 import { ConversationList } from '@/components/ConversationList';
@@ -67,10 +66,7 @@ export function App() {
     );
   }
 
-  // Authentication & Registration Views
-  if (view === 'register') {
-    return <RegisterForm />;
-  }
+  // Authentication Views
   if (view === 'pending') {
     return <PendingApproval />;
   }

@@ -316,6 +316,59 @@ export async function authenticateUser(
 }
 
 /**
+ * Unified auth: find an existing user or register a new one.
+ *
+ * - If the user exists and is approved → verify password → return success
+ * - If the user exists and is pending → return pending status
+ * - If the user exists and is rejected → return rejected status
+ * - If the user doesn't exist → auto-register with pending status
+ */
+export async function findOrRegister(
+  name: string,
+  password: string,
+): Promise<{ action: 'login' | 'registered' | 'pending' | 'rejected' | 'error'; user?: UserRecord; error?: string }> {
+  const trimmed = name.trim();
+  if (!trimmed || !password) {
+    return { action: 'error', error: 'Name and password are required.' };
+  }
+
+  // Check if user already exists (by name or Short ID)
+  const existing = await checkUserStatus(trimmed);
+
+  if (existing) {
+    // User found — handle by status
+    if (existing.status === 'pending') {
+      return { action: 'pending', user: existing };
+    }
+
+    if (existing.status === 'rejected') {
+      return { action: 'rejected', user: existing };
+    }
+
+    // Approved — verify password
+    if (existing.password_hash) {
+      const testHash = await hashPassword(password);
+      if (testHash !== existing.password_hash) {
+        return { action: 'error', error: 'Incorrect password or PIN.' };
+      }
+    }
+
+    return { action: 'login', user: existing };
+  }
+
+  // User not found — auto-register
+  try {
+    const newUser = await requestAccess(trimmed, password);
+    return { action: 'registered', user: newUser };
+  } catch (err) {
+    return {
+      action: 'error',
+      error: err instanceof Error ? err.message : 'Failed to create account. Please try again.',
+    };
+  }
+}
+
+/**
  * Get all users with status 'pending' (for Admin approval).
  */
 export async function getPendingUsers(): Promise<UserRecord[]> {

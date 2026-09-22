@@ -7,7 +7,7 @@
 import { create } from 'zustand';
 import type { MatrixClient, Room } from 'matrix-js-sdk';
 
-export type AppView = 'login' | 'register' | 'pending' | 'admin' | 'conversations' | 'chat' | 'call' | 'settings';
+export type AppView = 'login' | 'pending' | 'admin' | 'conversations' | 'chat' | 'call' | 'settings';
 export type Theme = 'system' | 'light' | 'dark';
 
 export interface CallState {
